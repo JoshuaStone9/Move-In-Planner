@@ -1,6 +1,6 @@
 # Move-in Planner
 
-A portfolio-style ASP.NET Core MVC application for managing household purchases before moving home. It separates a **requirement** (`HouseholdItem`) from the real products being considered (`ProductChoice`). This is why Amazon URLs are entered on the product-choice form rather than the initial item form.
+A portfolio-style ASP.NET Core MVC application for managing household purchases before moving home. It separates a **requirement** (`HouseholdItem`) from the real products being considered (`ProductChoice`). This is why Amazon and TikTok Shop URLs are entered on the product-choice form rather than the initial item form.
 
 ## Features
 
@@ -117,40 +117,39 @@ Apply the schema change with:
 dotnet ef database update
 ```
 
-## Amazon URL metadata import
+## Reusable retailer metadata import
 
-The purchase-option create and edit forms now include a **Fetch Amazon details** button.
+The product-choice create and edit forms include one retailer-aware **Fetch product details** action. It currently supports:
 
-The import process:
+- Amazon UK links from `amazon.co.uk`, `amazon.com` and `amzn.eu`;
+- TikTok Shop links from `tiktok.com`, including `vm.tiktok.com` share links.
 
-1. Accepts `amazon.co.uk`, `amazon.com` and `amzn.eu` links only.
-2. Resolves Amazon shortened links on the server.
-3. Reads product metadata that Amazon exposes in the returned HTML.
-4. Attempts to populate the product name, current price, image URL and retailer.
-5. Leaves all fields editable and requires the user to save the form normally.
+The shared import pipeline validates the starting URL, follows and records approved redirects, limits the amount of HTML read, extracts standard Open Graph metadata and then lets a small retailer provider add only the site-specific fallbacks. Amazon adds its product-title, price and image selectors. TikTok reads the `og_info` data supplied in Shop share-link redirects and stores a clean product URL without tracking parameters.
 
-The implementation is intentionally isolated behind `IProductMetadataService`. Retailer HTML is not a stable API, so failures are treated as normal and the user can continue with manual entry. The service also restricts outbound requests to approved Amazon hosts to reduce SSRF risk, limits the amount of HTML read, and uses a short HTTP timeout.
+The importer attempts to populate product name, current price when exposed, image URL and retailer. TikTok share links commonly provide the name and image but not the price, so every imported field remains editable before the form is saved.
 
 Key files:
 
 - `Services/ProductMetadata/IProductMetadataService.cs`
-- `Services/ProductMetadata/AmazonProductMetadataService.cs`
+- `Services/ProductMetadata/ProductMetadataService.cs`
+- `Services/ProductMetadata/IRetailerProductMetadataProvider.cs`
+- `Services/ProductMetadata/ProductMetadataHtmlReader.cs`
+- `Services/ProductMetadata/AmazonProductMetadataProvider.cs`
+- `Services/ProductMetadata/TikTokProductMetadataProvider.cs`
 - `Models/Requests/ProductMetadataRequest.cs`
 - `Models/Results/ProductMetadataResult.cs`
 - `Controllers/ProductChoicesController.cs`
 - `Views/ProductChoices/_Form.cshtml`
 
-No database migration is required for this feature because it populates existing `ProductChoice` fields.
+Adding another retailer does not require duplicating the HTTP, redirect, error-handling or common metadata code. Add another `IRetailerProductMetadataProvider` and register it in `Program.cs`. Sites using standard Open Graph metadata need little or no custom extraction.
 
-## Amazon image preview fix
+Outbound page redirects and image previews remain restricted to provider-approved hosts to reduce SSRF and open-proxy risks. The image preview policy supports approved Amazon image hosts and TikTok CDN hosts, with an appropriate retailer referer for each.
 
-Amazon image hosts sometimes reject direct browser hotlinking. The application now serves approved Amazon image URLs through `ProductChoices/ImagePreview`, adding browser-like request headers and validating the destination host to prevent arbitrary URL proxying. The importer also checks `og:image`, `twitter:image`, the `landingImage` element, dynamic image data and common Amazon page JSON properties.
+No database migration is required because the feature continues to populate existing `ProductChoice` fields.
 
-No further migration is required for this fix because it continues to use `ProductChoices.ImageUrl`.
+## Product import antiforgery handling
 
-## Amazon import button fix
-
-The product form now renders the antiforgery token before the reusable form partial and resolves the token when the Fetch Amazon details button is clicked. Previously, the JavaScript could run before ASP.NET had emitted the form token, causing it to return without attaching the click handler. The visible symptom was that pressing the button appeared to do nothing.
+The product form renders the antiforgery token before the reusable form partial and resolves the token when the import button is clicked. The same implementation is shared by the Create and Edit screens.
 
 ## Multiple products in one preferred plan
 

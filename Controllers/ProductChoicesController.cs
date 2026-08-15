@@ -12,12 +12,13 @@ namespace MoveInPlanner.Controllers;
 public class ProductChoicesController(
     ApplicationDbContext db,
     IProductMetadataService productMetadataService,
+    ProductImageRequestPolicy imageRequestPolicy,
     IHttpClientFactory httpClientFactory) : Controller
 {
 
     /// <summary>
-    /// Proxies approved Amazon product images through the application. Amazon image hosts
-    /// sometimes reject browser hotlinks even when the image URL was imported correctly.
+    /// Proxies approved retailer product images through the application. Some retailer
+    /// image hosts reject browser hotlinks even when the URL was imported correctly.
     /// </summary>
     [HttpGet]
     [ResponseCache(Duration = 86400, Location = ResponseCacheLocation.Client)]
@@ -25,7 +26,7 @@ public class ProductChoicesController(
         string url,
         CancellationToken cancellationToken)
     {
-        if (!TryCreateAllowedImageUri(url, out var imageUri))
+        if (!imageRequestPolicy.TryCreate(url, out var imageUri,out var referer))
             return BadRequest();
 
         try
@@ -36,7 +37,7 @@ public class ProductChoicesController(
                 "User-Agent",
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36");
             request.Headers.TryAddWithoutValidation("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8");
-            request.Headers.TryAddWithoutValidation("Referer", "https://www.amazon.co.uk/");
+            request.Headers.TryAddWithoutValidation("Referer", referer.ToString());
 
             using var response = await client.SendAsync(
                 request,
@@ -66,26 +67,6 @@ public class ProductChoicesController(
         }
     }
 
-    private static bool TryCreateAllowedImageUri(string? value, out Uri uri)
-    {
-        uri = null!;
-        if (string.IsNullOrWhiteSpace(value) ||
-            !Uri.TryCreate(value.Trim(), UriKind.Absolute, out var candidate) ||
-            candidate.Scheme != Uri.UriSchemeHttps)
-            return false;
-
-        var host = candidate.Host.TrimEnd('.').ToLowerInvariant();
-        var allowed =
-            host == "m.media-amazon.com" || host.EndsWith(".media-amazon.com") ||
-            host == "images-na.ssl-images-amazon.com" || host.EndsWith(".ssl-images-amazon.com") ||
-            host == "images.amazon.com" || host.EndsWith(".images-amazon.com") ||
-            host == "amazon.co.uk" || host.EndsWith(".amazon.co.uk");
-
-        if (!allowed) return false;
-        uri = candidate;
-        return true;
-    }
-
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> FetchProductMetadata(
         ProductMetadataRequest request,
@@ -96,7 +77,7 @@ public class ProductChoicesController(
             return BadRequest(new
             {
                 success = false,
-                errorMessage = "Enter a valid Amazon product URL."
+                errorMessage = "Enter a valid Amazon or TikTok Shop product URL."
             });
         }
 

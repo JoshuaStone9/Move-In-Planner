@@ -5,7 +5,10 @@ using MoveInPlanner.Services.ProductMetadata;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllersWithViews();
-builder.Services.AddHttpClient<IProductMetadataService, AmazonProductMetadataService>(client =>
+builder.Services.AddSingleton<IRetailerProductMetadataProvider, AmazonProductMetadataProvider>();
+builder.Services.AddSingleton<IRetailerProductMetadataProvider, TikTokProductMetadataProvider>();
+builder.Services.AddSingleton<ProductImageRequestPolicy>();
+builder.Services.AddHttpClient<IProductMetadataService, ProductMetadataService>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(12);
 })
@@ -20,7 +23,7 @@ builder.Services.AddHttpClient("ProductImageProxy", client =>
 })
 .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
 {
-    AllowAutoRedirect = true,
+    AllowAutoRedirect = false,
     AutomaticDecompression = System.Net.DecompressionMethods.All
 });
 builder.Services.AddDbContext<ApplicationDbContext>(options =>

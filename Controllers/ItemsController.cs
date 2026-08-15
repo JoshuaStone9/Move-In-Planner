@@ -150,9 +150,9 @@ public class ItemsController(ApplicationDbContext db) : Controller
         db.Add(item);
         await db.SaveChangesAsync();
 
-        TempData["SuccessMessage"] = $"{item.Name} was added. Add a purchase option when you are ready.";
+        TempData["Success"] = $"{item.Name} was added. Add its first product choice.";
 
-        return RedirectToAction(nameof(Details), new { id = item.Id });
+        return RedirectToAction("Create", "ProductChoices", new { itemId = item.Id });
     }
 
     public async Task<IActionResult> Edit(int id)
