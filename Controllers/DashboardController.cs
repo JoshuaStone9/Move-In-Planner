@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using MoveInPlanner.Data;
 using MoveInPlanner.Models.Enums;
 using MoveInPlanner.Models.ViewModels;
+using MoveInPlanner.Services;
 
 namespace MoveInPlanner.Controllers;
 
@@ -12,53 +13,53 @@ public class DashboardController(ApplicationDbContext db) : Controller
     {
         var items = await db.HouseholdItems
             .AsNoTracking()
-            .Include(x => x.Category)
-            .Include(x => x.ProductChoices)
-            .Include(x => x.SelectedProductChoice)
-            .OrderByDescending(x => x.IsEssentialForMoveIn)
-            .ThenByDescending(x => x.Priority)
-            .ThenBy(x => x.Name)
+            .Include(item => item.Category)
+            .Include(item => item.ProductChoices)
+            .Include(item => item.SelectedProductChoice)
+            .OrderByDescending(item => item.IsEssentialForMoveIn)
+            .ThenByDescending(item => item.Priority)
+            .ThenBy(item => item.Name)
             .ToListAsync();
 
         var model = new DashboardViewModel
         {
             TotalItems = items.Count,
-            PurchasedItems = items.Count(x => x.Status == PurchaseStatus.Purchased),
-            EssentialOutstanding = items.Count(x => x.IsEssentialForMoveIn && x.Status != PurchaseStatus.Purchased),
-            ItemsWithoutChoices = items.Count(x => x.ProductChoices.Count == 0),
-            PlannedBudget = items.Sum(x => x.TargetBudget ?? 0),
-            PurchasedSpend = items.Sum(x => x.ActualPurchasePrice ?? 0),
-            LoggedOptionsValue = items.Sum(item => item.ProductChoices.Sum(choice => choice.Price * choice.Quantity)),
-            CurrentPlanValue = items.Sum(item =>
-            {
-                var preferredChoices = item.ProductChoices
-                    .Where(choice => choice.IsPreferred)
-                    .ToList();
 
-                if (preferredChoices.Count > 0)
-                    return preferredChoices.Sum(choice => choice.Price * choice.Quantity);
+            PurchasedItems = items.Count(item => item.Status == PurchaseStatus.Purchased),
 
-                var budgetFallback = item.ProductChoices
-                    .OrderBy(choice => choice.Price * choice.Quantity)
-                    .FirstOrDefault();
+            EssentialOutstanding = items.Count(item => item.IsEssentialForMoveIn && item.Status != PurchaseStatus.Purchased),
 
-                return budgetFallback is null ? 0 : budgetFallback.Price * budgetFallback.Quantity;
-            }),
-            Categories = items.GroupBy(x => x.Category.Name)
-                .OrderBy(x => x.Key)
+            ItemsWithoutChoices = items.Count(item => item.ProductChoices.Count == 0),
+
+            PlannedBudget = items.Sum(item => item.TargetBudget ?? 0),
+
+            PurchasedSpend = items.Sum(HouseholdItemValueCalculator.PurchasedValue),
+
+            LoggedOptionsValue = items.Sum(HouseholdItemValueCalculator.LoggedOptionsValue),
+
+            CurrentPlanValue = items.Sum(HouseholdItemValueCalculator.CurrentPlanValue),
+
+            Categories = items
+                .GroupBy(item => item.Category.Name)
+                .OrderBy(group => group.Key)
                 .Select(group => new CategoryDashboardGroup
                 {
                     Name = group.Key,
                     Total = group.Count(),
-                    Purchased = group.Count(x => x.Status == PurchaseStatus.Purchased),
+
+                    Purchased = group.Count(item => item.Status == PurchaseStatus.Purchased),
+
                     Items = group.Take(6).ToList()
-                }).ToList(),
+                })
+                .ToList(),
+
             NextActions = items
-                .Where(x => x.Status != PurchaseStatus.Purchased)
-                .OrderByDescending(x => x.IsEssentialForMoveIn)
-                .ThenByDescending(x => x.Priority)
-                .ThenBy(x => x.NeededBy ?? DateTime.MaxValue)
-                .Take(6).ToList()
+                .Where(item => item.Status != PurchaseStatus.Purchased)
+                .OrderByDescending(item => item.IsEssentialForMoveIn)
+                .ThenByDescending(item => item.Priority)
+                .ThenBy(item => item.NeededBy ?? DateTime.MaxValue)
+                .Take(6)
+                .ToList()
         };
 
         return View(model);

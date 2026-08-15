@@ -3,59 +3,47 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
 using MoveInPlanner.Data;
 using MoveInPlanner.Models.Entities;
+using MoveInPlanner.Models.Enums;
 using MoveInPlanner.Models.ViewModels;
+using MoveInPlanner.Services;
 
 namespace MoveInPlanner.Controllers;
 
 public class ItemsController(ApplicationDbContext db) : Controller
 {
-    public async Task<IActionResult> Index(string? search, int? categoryId, MoveInPlanner.Models.Enums.PurchaseStatus? status)
+    public async Task<IActionResult> Index(string? search, int? categoryId, PurchaseStatus? status)
     {
         var query = db.HouseholdItems
             .AsNoTracking()
-            .Include(x => x.Category)
-            .Include(x => x.ProductChoices)
+            .Include(item => item.Category)
+            .Include(item => item.ProductChoices)
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
         {
             var trimmedSearch = search.Trim();
-            query = query.Where(x => x.Name.Contains(trimmedSearch));
+            query = query.Where(item => item.Name.Contains(trimmedSearch));
         }
 
         if (categoryId.HasValue)
-            query = query.Where(x => x.CategoryId == categoryId);
+            query = query.Where(item => item.CategoryId == categoryId);
 
         if (status.HasValue)
-            query = query.Where(x => x.Status == status);
+            query = query.Where(item => item.Status == status);
 
         var items = await query
-            .OrderBy(x => x.Category.Name)
-            .ThenBy(x => x.Name)
+            .OrderBy(item => item.Category.Name)
+            .ThenBy(item => item.Name)
             .ToListAsync();
 
         ViewBag.Categories = new SelectList(
-            await db.Categories.AsNoTracking().OrderBy(x => x.Name).ToListAsync(),
-            "Id", "Name", categoryId);
-
-        static decimal? CheapestOptionValue(HouseholdItem item)
-        {
-            if (item.ProductChoices.Count == 0)
-                return null;
-
-            return item.ProductChoices.Min(choice => choice.Price * choice.Quantity);
-        }
-
-        static decimal? PreferredPlanValue(HouseholdItem item)
-        {
-            var preferred = item.ProductChoices.Where(choice => choice.IsPreferred).ToList();
-            return preferred.Count == 0
-                ? null
-                : preferred.Sum(choice => choice.Price * choice.Quantity);
-        }
-
-        static decimal CurrentPlanValue(HouseholdItem item)
-            => PreferredPlanValue(item) ?? CheapestOptionValue(item) ?? 0;
+            await db.Categories
+                .AsNoTracking()
+                .OrderBy(category => category.Name)
+                .ToListAsync(),
+            "Id",
+            "Name",
+            categoryId);
 
         var model = new ItemsIndexViewModel
         {
@@ -63,22 +51,30 @@ public class ItemsController(ApplicationDbContext db) : Controller
             CategoryId = categoryId,
             Status = status,
             TotalItems = items.Count,
-            PurchasedItems = items.Count(x => x.Status == MoveInPlanner.Models.Enums.PurchaseStatus.Purchased),
-            CurrentPlanValue = items.Sum(CurrentPlanValue),
-            PurchasedValue = items.Sum(item =>
-                item.ActualPurchasePrice
-                ?? item.ProductChoices.Where(choice => choice.IsPurchased)
-                    .Sum(choice => choice.Price * choice.Quantity)),
+
+            PurchasedItems = items.Count(item => item.Status == PurchaseStatus.Purchased),
+
+            CurrentPlanValue = items.Sum(HouseholdItemValueCalculator.CurrentPlanValue),
+
+            PurchasedValue = items.Sum(HouseholdItemValueCalculator.PurchasedValue),
+
             Categories = items
-                .GroupBy(item => new { item.CategoryId, item.Category.Name })
+                .GroupBy(item => new
+                {
+                    item.CategoryId,
+                    item.Category.Name
+                })
                 .OrderBy(group => group.Key.Name)
                 .Select(group => new ItemCategorySectionViewModel
                 {
                     CategoryId = group.Key.CategoryId,
                     Name = group.Key.Name,
                     TotalItems = group.Count(),
-                    PurchasedItems = group.Count(item => item.Status == MoveInPlanner.Models.Enums.PurchaseStatus.Purchased),
-                    CurrentPlanValue = group.Sum(CurrentPlanValue),
+
+                    PurchasedItems = group.Count(item => item.Status == PurchaseStatus.Purchased),
+
+                    CurrentPlanValue = group.Sum(HouseholdItemValueCalculator.CurrentPlanValue),
+
                     Items = group
                         .OrderBy(item => item.Name)
                         .Select(item => new ItemListCardViewModel
@@ -93,8 +89,8 @@ public class ItemsController(ApplicationDbContext db) : Controller
                             TargetBudget = item.TargetBudget,
                             PurchaseOptionCount = item.ProductChoices.Count,
                             PreferredOptionCount = item.ProductChoices.Count(choice => choice.IsPreferred),
-                            PreferredPlanValue = PreferredPlanValue(item),
-                            CheapestOptionValue = CheapestOptionValue(item)
+                            PreferredPlanValue = HouseholdItemValueCalculator.PreferredPlanValue(item),
+                            CheapestOptionValue = HouseholdItemValueCalculator.CheapestOptionValue(item)
                         })
                         .ToList()
                 })
@@ -108,10 +104,10 @@ public class ItemsController(ApplicationDbContext db) : Controller
     {
         var item = await db.HouseholdItems
             .AsNoTracking()
-            .Include(x => x.Category)
-            .Include(x => x.ProductChoices)
-            .Include(x => x.SelectedProductChoice)
-            .SingleOrDefaultAsync(x => x.Id == id);
+            .Include(item => item.Category)
+            .Include(item => item.ProductChoices)
+            .Include(item => item.SelectedProductChoice)
+            .SingleOrDefaultAsync(item => item.Id == id);
 
         if (item is null)
             return NotFound();
@@ -120,20 +116,14 @@ public class ItemsController(ApplicationDbContext db) : Controller
             .Select(choice => choice.Price * choice.Quantity)
             .ToList();
 
-        var preferredChoices = item.ProductChoices
-            .Where(choice => choice.IsPreferred)
-            .ToList();
-
         return View(new ItemDetailsViewModel
         {
             Item = item,
-            LoggedOptionsValue = optionTotals.Sum(),
-            CheapestOptionValue = optionTotals.Count == 0 ? null : optionTotals.Min(),
+            LoggedOptionsValue = HouseholdItemValueCalculator.LoggedOptionsValue(item),
+            CheapestOptionValue = HouseholdItemValueCalculator.CheapestOptionValue(item),
             HighestOptionValue = optionTotals.Count == 0 ? null : optionTotals.Max(),
-            PreferredOptionValue = preferredChoices.Count == 0
-                ? null
-                : preferredChoices.Sum(choice => choice.Price * choice.Quantity),
-            PreferredOptionCount = preferredChoices.Count
+            PreferredOptionValue = HouseholdItemValueCalculator.PreferredPlanValue(item),
+            PreferredOptionCount = item.ProductChoices.Count(choice => choice.IsPreferred)
         });
     }
 
@@ -141,6 +131,7 @@ public class ItemsController(ApplicationDbContext db) : Controller
     {
         var model = new ItemFormViewModel();
         await PopulateCategories(model);
+
         return View(model);
     }
 
@@ -158,13 +149,18 @@ public class ItemsController(ApplicationDbContext db) : Controller
 
         db.Add(item);
         await db.SaveChangesAsync();
+
         TempData["SuccessMessage"] = $"{item.Name} was added. Add a purchase option when you are ready.";
+
         return RedirectToAction(nameof(Details), new { id = item.Id });
     }
 
     public async Task<IActionResult> Edit(int id)
     {
-        var item = await db.HouseholdItems.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id);
+        var item = await db.HouseholdItems
+            .AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == id);
+
         if (item is null)
             return NotFound();
 
@@ -186,6 +182,7 @@ public class ItemsController(ApplicationDbContext db) : Controller
         };
 
         await PopulateCategories(model);
+
         return View(model);
     }
 
@@ -201,7 +198,9 @@ public class ItemsController(ApplicationDbContext db) : Controller
             return View(model);
         }
 
-        var item = await db.HouseholdItems.SingleOrDefaultAsync(x => x.Id == id);
+        var item = await db.HouseholdItems
+            .SingleOrDefaultAsync(item => item.Id == id);
+
         if (item is null)
             return NotFound();
 
@@ -209,7 +208,9 @@ public class ItemsController(ApplicationDbContext db) : Controller
         item.UpdatedAtUtc = DateTime.UtcNow;
 
         await db.SaveChangesAsync();
+
         TempData["SuccessMessage"] = $"{item.Name} was updated.";
+
         return RedirectToAction(nameof(Details), new { id = item.Id });
     }
 
@@ -217,9 +218,9 @@ public class ItemsController(ApplicationDbContext db) : Controller
     {
         var item = await db.HouseholdItems
             .AsNoTracking()
-            .Include(x => x.Category)
-            .Include(x => x.ProductChoices)
-            .SingleOrDefaultAsync(x => x.Id == id);
+            .Include(item => item.Category)
+            .Include(item => item.ProductChoices)
+            .SingleOrDefaultAsync(item => item.Id == id);
 
         return item is null ? NotFound() : View(item);
     }
@@ -227,14 +228,14 @@ public class ItemsController(ApplicationDbContext db) : Controller
     [HttpPost, ActionName("Delete"), ValidateAntiForgeryToken]
     public async Task<IActionResult> DeleteConfirmed(int id)
     {
-        var item = await db.HouseholdItems.SingleOrDefaultAsync(x => x.Id == id);
+        var item = await db.HouseholdItems
+            .SingleOrDefaultAsync(item => item.Id == id);
+
         if (item is null)
             return NotFound();
 
         var name = item.Name;
 
-        // Break the optional selected-choice reference before deleting the item.
-        // Product choices are then removed by the configured cascade relationship.
         if (item.SelectedProductChoiceId.HasValue)
         {
             item.SelectedProductChoiceId = null;
@@ -243,7 +244,9 @@ public class ItemsController(ApplicationDbContext db) : Controller
 
         db.Remove(item);
         await db.SaveChangesAsync();
+
         TempData["SuccessMessage"] = $"{name} and its purchase options were deleted.";
+
         return RedirectToAction(nameof(Index));
     }
 
@@ -265,9 +268,12 @@ public class ItemsController(ApplicationDbContext db) : Controller
 
     private async Task PopulateCategories(ItemFormViewModel model)
     {
-        model.Categories = await db.Categories.AsNoTracking()
-            .OrderBy(x => x.Name)
-            .Select(x => new SelectListItem(x.Name, x.Id.ToString()))
+        model.Categories = await db.Categories
+            .AsNoTracking()
+            .OrderBy(category => category.Name)
+            .Select(category => new SelectListItem(
+                category.Name,
+                category.Id.ToString()))
             .ToListAsync();
     }
 }
