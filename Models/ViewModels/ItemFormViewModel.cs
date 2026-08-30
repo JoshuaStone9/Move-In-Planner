@@ -26,6 +26,10 @@ public class ItemFormViewModel
     [Range(0, 1000000), Display(Name = "Target budget")]
     public decimal? TargetBudget { get; set; }
 
+    [Range(typeof(decimal), "0", "1000000", ErrorMessage = "The total purchase price must be between £0 and £1,000,000.")]
+    [Display(Name = "Total purchase price")]
+    public decimal? PurchasedPrice { get; set; }
+
     [Display(Name = "Essential for move-in")]
     public bool IsEssentialForMoveIn { get; set; }
 

@@ -18,17 +18,36 @@ public static class HouseholdItemValueCalculator
         return preferredChoices.Count == 0 ? null : preferredChoices.Sum(ChoiceValue);
     }
 
+    public static decimal? PurchasedChoicesValue(HouseholdItem item)
+    {
+        var purchasedChoices = item.ProductChoices
+            .Where(choice => choice.IsPurchased)
+            .ToList();
+
+        return purchasedChoices.Count == 0 ? null : purchasedChoices.Sum(ChoiceValue);
+    }
+
     public static decimal CurrentPlanValue(HouseholdItem item)
     {
+        if (item.Status == PurchaseStatus.Purchased)
+            return PurchaseValue(item);
+
         var preferredPlanValue = PreferredPlanValue(item);
 
         if (preferredPlanValue.HasValue)
             return preferredPlanValue.Value;
 
-        return item.Status == PurchaseStatus.Purchased ? 0 : CheapestOptionValue(item) ?? 0;
+        return CheapestOptionValue(item) ?? 0;
     }
 
-    public static decimal PurchasedValue(HouseholdItem item) => item.Status == PurchaseStatus.Purchased ? PreferredPlanValue(item) ?? 0 : 0;
+    public static decimal PurchasedValue(HouseholdItem item) =>
+        item.Status == PurchaseStatus.Purchased ? PurchaseValue(item) : 0;
 
     public static decimal LoggedOptionsValue(HouseholdItem item) => item.ProductChoices.Sum(ChoiceValue);
+
+    private static decimal PurchaseValue(HouseholdItem item) =>
+        item.ActualPurchasePrice
+        ?? PurchasedChoicesValue(item)
+        ?? PreferredPlanValue(item)
+        ?? 0;
 }

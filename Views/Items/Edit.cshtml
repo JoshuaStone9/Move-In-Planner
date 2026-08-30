@@ -21,6 +21,7 @@
     <div class="form-section"><h2>Priority and timing</h2><div class="row g-3">
         <div class="col-md-4"><label asp-for="Priority"></label><select asp-for="Priority" asp-items="Html.GetEnumSelectList<ItemPriority>()" class="form-select"></select></div>
         <div class="col-md-4"><label asp-for="Status"></label><select asp-for="Status" asp-items="Html.GetEnumSelectList<PurchaseStatus>()" class="form-select"></select></div>
+        <div class="col-md-4"><label asp-for="PurchasedPrice"></label><div class="input-group"><span class="input-group-text">£</span><input asp-for="PurchasedPrice" class="form-control" /></div><small>Entering a value automatically sets the status to Purchased. Clear it before changing the item to another status.</small><span asp-validation-for="PurchasedPrice" class="text-danger"></span></div>
         <div class="col-md-4"><label asp-for="NeededBy"></label><input asp-for="NeededBy" class="form-control" /></div>
         <div class="col-12"><div class="form-check switch-card"><input asp-for="IsEssentialForMoveIn" class="form-check-input" /><label asp-for="IsEssentialForMoveIn" class="form-check-label"><strong>Essential for moving day</strong><span>This item should be prioritised on the dashboard.</span></label></div></div>
     </div></div>

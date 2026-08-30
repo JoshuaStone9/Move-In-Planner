@@ -20,5 +20,9 @@ public class ItemDetailsViewModel
     /// </summary>
     public decimal? PreferredOptionValue { get; init; }
 
+    public decimal? PurchasedChoicesValue { get; init; }
+
+    public decimal PurchasedValue { get; init; }
+
     public int PreferredOptionCount { get; init; }
 }

@@ -26,7 +26,7 @@
     <article class="items-summary-card featured">
         <span>Current plan value</span>
         <strong>@Model.CurrentPlanValue.ToString("C")</strong>
-        <small>Preferred options, or cheapest fallback</small>
+        <small>Purchased totals, preferred options, or cheapest fallback</small>
     </article>
     <article class="items-summary-card">
         <span>Purchased value</span>
@@ -119,14 +119,18 @@ else
                                     <strong>@(item.TargetBudget?.ToString("C") ?? "—")</strong>
                                 </div>
                                 <div class="plan-value-cell">
-                                    <span>@(item.PreferredOptionCount > 0 ? "Preferred plan" : "Budget fallback")</span>
+                                    <span>@item.DisplayPlanLabel</span>
                                     <strong>@(item.DisplayPlanValue?.ToString("C") ?? "—")</strong>
                                 </div>
                             </div>
 
                             <div class="grouped-item-footer">
                                 <span>
-                                    @if (item.PreferredOptionCount > 0)
+                                    @if (item.Status == PurchaseStatus.Purchased && item.PurchaseOptionCount == 0)
+                                    {
+                                        @("Manual purchase total recorded")
+                                    }
+                                    else if (item.PreferredOptionCount > 0)
                                     {
                                         @($"{item.PreferredOptionCount} preferred option{(item.PreferredOptionCount == 1 ? "" : "s")}")
                                     }

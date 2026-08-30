@@ -29,7 +29,8 @@ public class DashboardController(ApplicationDbContext db) : Controller
 
             EssentialOutstanding = items.Count(item => item.IsEssentialForMoveIn && item.Status != PurchaseStatus.Purchased),
 
-            ItemsWithoutChoices = items.Count(item => item.ProductChoices.Count == 0),
+            ItemsWithoutChoices = items.Count(item =>
+                item.Status != PurchaseStatus.Purchased && item.ProductChoices.Count == 0),
 
             PlannedBudget = items.Sum(item => item.TargetBudget ?? 0),
 

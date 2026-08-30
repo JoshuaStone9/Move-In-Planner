@@ -52,10 +52,20 @@ public sealed class ItemListCardViewModel
     public int PreferredOptionCount { get; init; }
     public decimal? PreferredPlanValue { get; init; }
     public decimal? CheapestOptionValue { get; init; }
+    public decimal CurrentPlanValue { get; init; }
 
     /// <summary>
-    /// Preferred options are used when present; otherwise the cheapest option is
-    /// displayed as the current planning fallback, matching the dashboard logic.
+    /// Purchased items display their recorded purchase value. Other items use
+    /// preferred options, or the cheapest option as the planning fallback.
     /// </summary>
-    public decimal? DisplayPlanValue => PreferredPlanValue ?? CheapestOptionValue;
+    public decimal? DisplayPlanValue =>
+        Status == PurchaseStatus.Purchased || PreferredOptionCount > 0 || PurchaseOptionCount > 0
+            ? CurrentPlanValue
+            : null;
+
+    public string DisplayPlanLabel => Status == PurchaseStatus.Purchased
+        ? "Purchased total"
+        : PreferredOptionCount > 0
+            ? "Preferred plan"
+            : "Budget fallback";
 }

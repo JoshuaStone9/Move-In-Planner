@@ -90,7 +90,8 @@ public class ItemsController(ApplicationDbContext db) : Controller
                             PurchaseOptionCount = item.ProductChoices.Count,
                             PreferredOptionCount = item.ProductChoices.Count(choice => choice.IsPreferred),
                             PreferredPlanValue = HouseholdItemValueCalculator.PreferredPlanValue(item),
-                            CheapestOptionValue = HouseholdItemValueCalculator.CheapestOptionValue(item)
+                            CheapestOptionValue = HouseholdItemValueCalculator.CheapestOptionValue(item),
+                            CurrentPlanValue = HouseholdItemValueCalculator.CurrentPlanValue(item)
                         })
                         .ToList()
                 })
@@ -123,6 +124,8 @@ public class ItemsController(ApplicationDbContext db) : Controller
             CheapestOptionValue = HouseholdItemValueCalculator.CheapestOptionValue(item),
             HighestOptionValue = optionTotals.Count == 0 ? null : optionTotals.Max(),
             PreferredOptionValue = HouseholdItemValueCalculator.PreferredPlanValue(item),
+            PurchasedChoicesValue = HouseholdItemValueCalculator.PurchasedChoicesValue(item),
+            PurchasedValue = HouseholdItemValueCalculator.PurchasedValue(item),
             PreferredOptionCount = item.ProductChoices.Count(choice => choice.IsPreferred)
         });
     }
@@ -150,6 +153,12 @@ public class ItemsController(ApplicationDbContext db) : Controller
         db.Add(item);
         await db.SaveChangesAsync();
 
+        if (item.Status == PurchaseStatus.Purchased && item.ActualPurchasePrice.HasValue)
+        {
+            TempData["Success"] = $"{item.Name} was added with its purchase total.";
+            return RedirectToAction(nameof(Details), new { id = item.Id });
+        }
+
         TempData["Success"] = $"{item.Name} was added. Add its first product choice.";
 
         return RedirectToAction("Create", "ProductChoices", new { itemId = item.Id });
@@ -174,6 +183,7 @@ public class ItemsController(ApplicationDbContext db) : Controller
             Status = item.Status,
             QuantityRequired = item.QuantityRequired,
             TargetBudget = item.TargetBudget,
+            PurchasedPrice = item.ActualPurchasePrice,
             IsEssentialForMoveIn = item.IsEssentialForMoveIn,
             NeededBy = item.NeededBy,
             GeneralNotes = item.GeneralNotes,
@@ -256,9 +266,30 @@ public class ItemsController(ApplicationDbContext db) : Controller
         item.CategoryId = model.CategoryId;
         item.ChoiceType = model.ChoiceType;
         item.Priority = model.Priority;
-        item.Status = model.Status;
         item.QuantityRequired = model.QuantityRequired;
         item.TargetBudget = model.TargetBudget;
+
+        // Entering a manual purchase total is itself enough to record the item as
+        // purchased. This prevents a valid total being silently discarded when
+        // the user forgets to change the status dropdown first.
+        var isPurchased = model.Status == PurchaseStatus.Purchased
+            || model.PurchasedPrice.HasValue;
+
+        item.Status = isPurchased
+            ? PurchaseStatus.Purchased
+            : model.Status;
+
+        if (isPurchased)
+        {
+            item.ActualPurchasePrice = model.PurchasedPrice;
+            item.PurchasedOn ??= DateTime.Today;
+        }
+        else
+        {
+            item.ActualPurchasePrice = null;
+            item.PurchasedOn = null;
+        }
+
         item.IsEssentialForMoveIn = model.IsEssentialForMoveIn;
         item.NeededBy = model.NeededBy;
         item.GeneralNotes = string.IsNullOrWhiteSpace(model.GeneralNotes) ? null : model.GeneralNotes.Trim();
