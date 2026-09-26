@@ -56,6 +56,8 @@ public class ItemsController(ApplicationDbContext db) : Controller
 
             CurrentPlanValue = items.Sum(HouseholdItemValueCalculator.CurrentPlanValue),
 
+            RemainingPlanValue = items.Sum(HouseholdItemValueCalculator.RemainingPlanValue),
+
             PurchasedValue = items.Sum(HouseholdItemValueCalculator.PurchasedValue),
 
             Categories = items
@@ -90,7 +92,8 @@ public class ItemsController(ApplicationDbContext db) : Controller
                             PurchaseOptionCount = item.ProductChoices.Count,
                             PreferredOptionCount = item.ProductChoices.Count(choice => choice.IsPreferred),
                             PreferredPlanValue = HouseholdItemValueCalculator.PreferredPlanValue(item),
-                            CheapestOptionValue = HouseholdItemValueCalculator.CheapestOptionValue(item)
+                            CheapestOptionValue = HouseholdItemValueCalculator.CheapestOptionValue(item),
+                            CurrentPlanValue = HouseholdItemValueCalculator.CurrentPlanValue(item)
                         })
                         .ToList()
                 })
@@ -123,6 +126,8 @@ public class ItemsController(ApplicationDbContext db) : Controller
             CheapestOptionValue = HouseholdItemValueCalculator.CheapestOptionValue(item),
             HighestOptionValue = optionTotals.Count == 0 ? null : optionTotals.Max(),
             PreferredOptionValue = HouseholdItemValueCalculator.PreferredPlanValue(item),
+            PurchasedChoicesValue = HouseholdItemValueCalculator.PurchasedChoicesValue(item),
+            PurchasedValue = HouseholdItemValueCalculator.PurchasedValue(item),
             PreferredOptionCount = item.ProductChoices.Count(choice => choice.IsPreferred)
         });
     }
@@ -133,6 +138,126 @@ public class ItemsController(ApplicationDbContext db) : Controller
         await PopulateCategories(model);
 
         return View(model);
+    }
+
+    public async Task<IActionResult> BulkCreate()
+    {
+        var model = new BulkCreateItemsViewModel
+        {
+            MarkAsPurchased = true,
+            Rows = Enumerable.Range(0, 6)
+                .Select(_ => new BulkCreateItemRowViewModel())
+                .ToList()
+        };
+
+        await PopulateBulkCategories(model);
+        return View(model);
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> BulkCreate(
+        BulkCreateItemsViewModel model,
+        CancellationToken cancellationToken)
+    {
+        if (model.Rows.Count > 200)
+            ModelState.AddModelError(nameof(model.Rows), "Add no more than 200 items in one batch.");
+
+        var submittedRows = model.Rows
+            .Select((row, index) => new { Row = row, Index = index })
+            .Where(entry => !entry.Row.IsBlank)
+            .ToList();
+
+        if (submittedRows.Count == 0)
+            ModelState.AddModelError(nameof(model.Rows), "Enter at least one item to add.");
+
+        var validCategoryIds = (await db.Categories
+            .AsNoTracking()
+            .Select(category => category.Id)
+            .ToListAsync(cancellationToken))
+            .ToHashSet();
+
+        foreach (var entry in submittedRows)
+        {
+            var row = entry.Row;
+            var keyPrefix = $"Rows[{entry.Index}]";
+            var categoryId = row.CategoryId ?? model.DefaultCategoryId;
+
+            if (string.IsNullOrWhiteSpace(row.Name))
+                ModelState.AddModelError($"{keyPrefix}.Name", "Enter an item name.");
+
+            if (!categoryId.HasValue || !validCategoryIds.Contains(categoryId.Value))
+                ModelState.AddModelError($"{keyPrefix}.CategoryId", "Select a valid category.");
+
+            if (!row.Price.HasValue)
+                ModelState.AddModelError($"{keyPrefix}.Price", "Enter the unit price.");
+
+            if (row.Price is > 0
+                && row.Quantity > 0
+                && row.Price.Value > 99_999_999.99m / row.Quantity)
+                ModelState.AddModelError($"{keyPrefix}.Price", "The price multiplied by quantity is too large.");
+        }
+
+        if (!ModelState.IsValid)
+        {
+            await PopulateBulkCategories(model, cancellationToken);
+            return View(model);
+        }
+
+        var now = DateTime.UtcNow;
+        DateTime? purchasedOn = model.MarkAsPurchased ? DateTime.Today : null;
+
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        foreach (var entry in submittedRows)
+        {
+            var row = entry.Row;
+            var name = row.Name!.Trim();
+            var categoryId = row.CategoryId ?? model.DefaultCategoryId!.Value;
+            var price = row.Price!.Value;
+            var totalPrice = price * row.Quantity;
+
+            var item = new HouseholdItem
+            {
+                Name = name,
+                CategoryId = categoryId,
+                ChoiceType = row.Quantity > 1
+                    ? ItemChoiceType.MultipleRequired
+                    : ItemChoiceType.SinglePick,
+                Priority = ItemPriority.Medium,
+                Status = model.MarkAsPurchased
+                    ? PurchaseStatus.Purchased
+                    : PurchaseStatus.Comparing,
+                QuantityRequired = row.Quantity,
+                TargetBudget = totalPrice,
+                IsEssentialForMoveIn = false,
+                PurchasedOn = purchasedOn,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
+            };
+
+            item.ProductChoices.Add(new ProductChoice
+            {
+                Name = name,
+                Tier = ProductTier.Standard,
+                Price = price,
+                Quantity = row.Quantity,
+                Retailer = "Temu",
+                IsPreferred = false,
+                IsPurchased = model.MarkAsPurchased,
+                PriceCheckedOn = DateTime.Today,
+                CreatedAtUtc = now
+            });
+
+            db.HouseholdItems.Add(item);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        var purchasedSuffix = model.MarkAsPurchased ? " as purchased" : string.Empty;
+        TempData["Success"] = $"{submittedRows.Count} Temu item{(submittedRows.Count == 1 ? "" : "s")} added{purchasedSuffix}.";
+
+        return RedirectToAction(nameof(Index));
     }
 
     [HttpPost, ValidateAntiForgeryToken]
@@ -149,6 +274,12 @@ public class ItemsController(ApplicationDbContext db) : Controller
 
         db.Add(item);
         await db.SaveChangesAsync();
+
+        if (item.Status == PurchaseStatus.Purchased && item.ActualPurchasePrice.HasValue)
+        {
+            TempData["Success"] = $"{item.Name} was added with its purchase total.";
+            return RedirectToAction(nameof(Details), new { id = item.Id });
+        }
 
         TempData["Success"] = $"{item.Name} was added. Add its first product choice.";
 
@@ -174,6 +305,7 @@ public class ItemsController(ApplicationDbContext db) : Controller
             Status = item.Status,
             QuantityRequired = item.QuantityRequired,
             TargetBudget = item.TargetBudget,
+            PurchasedPrice = item.ActualPurchasePrice,
             IsEssentialForMoveIn = item.IsEssentialForMoveIn,
             NeededBy = item.NeededBy,
             GeneralNotes = item.GeneralNotes,
@@ -256,9 +388,30 @@ public class ItemsController(ApplicationDbContext db) : Controller
         item.CategoryId = model.CategoryId;
         item.ChoiceType = model.ChoiceType;
         item.Priority = model.Priority;
-        item.Status = model.Status;
         item.QuantityRequired = model.QuantityRequired;
         item.TargetBudget = model.TargetBudget;
+
+        // Entering a manual purchase total is itself enough to record the item as
+        // purchased. This prevents a valid total being silently discarded when
+        // the user forgets to change the status dropdown first.
+        var isPurchased = model.Status == PurchaseStatus.Purchased
+            || model.PurchasedPrice.HasValue;
+
+        item.Status = isPurchased
+            ? PurchaseStatus.Purchased
+            : model.Status;
+
+        if (isPurchased)
+        {
+            item.ActualPurchasePrice = model.PurchasedPrice;
+            item.PurchasedOn ??= DateTime.Today;
+        }
+        else
+        {
+            item.ActualPurchasePrice = null;
+            item.PurchasedOn = null;
+        }
+
         item.IsEssentialForMoveIn = model.IsEssentialForMoveIn;
         item.NeededBy = model.NeededBy;
         item.GeneralNotes = string.IsNullOrWhiteSpace(model.GeneralNotes) ? null : model.GeneralNotes.Trim();
@@ -275,5 +428,23 @@ public class ItemsController(ApplicationDbContext db) : Controller
                 category.Name,
                 category.Id.ToString()))
             .ToListAsync();
+    }
+
+    private async Task PopulateBulkCategories(
+        BulkCreateItemsViewModel model,
+        CancellationToken cancellationToken = default)
+    {
+        var categories = await db.Categories
+            .AsNoTracking()
+            .OrderBy(category => category.Name)
+            .ToListAsync(cancellationToken);
+
+        model.DefaultCategoryId ??= categories
+            .FirstOrDefault(category => category.Name == "Kitchen")?.Id
+            ?? categories.FirstOrDefault()?.Id;
+
+        model.Categories = categories.Select(category => new SelectListItem(
+            category.Name,
+            category.Id.ToString()));
     }
 }

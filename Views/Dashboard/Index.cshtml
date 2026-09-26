@@ -15,7 +15,7 @@
 <div class="stat-grid stat-grid-six mb-4">
     <article class="stat-card"><span>Completion</span><strong>@Model.CompletionPercentage%</strong><small>@Model.PurchasedItems of @Model.TotalItems purchased</small></article>
     <article class="stat-card"><span>Maximum budgets</span><strong>@Model.PlannedBudget.ToString("C")</strong><small>Combined spending limits</small></article>
-    <article class="stat-card featured"><span>Current plan value</span><strong>@Model.CurrentPlanValue.ToString("C")</strong><small>Preferred option, or cheapest when none is selected</small></article>
+    <article class="stat-card featured"><span>Current plan value</span><strong>@Model.CurrentPlanValue.ToString("C")</strong><small>Purchased totals, preferred options, or cheapest fallback</small></article>
     <article class="stat-card"><span>All options logged</span><strong>@Model.LoggedOptionsValue.ToString("C")</strong><small>Includes every alternative entered</small></article>
     <article class="stat-card"><span>Purchased spend</span><strong>@Model.PurchasedSpend.ToString("C")</strong><small>Actual recorded spend</small></article>
     <article class="stat-card warning"><span>Needs attention</span><strong>@(Model.EssentialOutstanding + Model.ItemsWithoutChoices)</strong><small>Essential or missing choices</small></article>

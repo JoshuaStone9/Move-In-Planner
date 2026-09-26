@@ -39,7 +39,14 @@
     <div><span>Priority</span><strong>@item.Priority</strong></div>
     <div><span>Purchase options</span><strong>@item.ProductChoices.Count</strong></div>
     <div><span>Logged options total</span><strong>@Model.LoggedOptionsValue.ToString("C")</strong></div>
-    <div class="preferred-total-stat"><span>Preferred plan</span><strong>@(Model.PreferredOptionValue?.ToString("C") ?? "Not selected")</strong>@if(Model.PreferredOptionCount > 0){<small>@Model.PreferredOptionCount option(s) included</small>}</div>
+    @if (item.Status == PurchaseStatus.Purchased)
+    {
+        <div class="preferred-total-stat"><span>Purchased total</span><strong>@Model.PurchasedValue.ToString("C")</strong>@if(item.ActualPurchasePrice.HasValue){<small>Manual total recorded</small>}else if(Model.PurchasedChoicesValue.HasValue){<small>From purchased choices</small>}else if(Model.PreferredOptionValue.HasValue){<small>Preferred-plan fallback</small>}</div>
+    }
+    else
+    {
+        <div class="preferred-total-stat"><span>Preferred plan</span><strong>@(Model.PreferredOptionValue?.ToString("C") ?? "Not selected")</strong>@if(Model.PreferredOptionCount > 0){<small>@Model.PreferredOptionCount option(s) included</small>}</div>
+    }
 </div>
 
 <section class="notes-panel general-notes-panel mb-5">
@@ -69,7 +76,14 @@
 <div class="section-heading"><div><span class="eyebrow">COMPARE YOUR OPTIONS</span><h2>Purchase options</h2></div></div>
 @if (!item.ProductChoices.Any())
 {
-    <div class="empty-state"><div class="empty-icon">↗</div><h2>No purchase options yet</h2><p>Add the actual product, including its current price, retailer and product URL.</p><a asp-controller="ProductChoices" asp-action="Create" asp-route-itemId="@item.Id" class="btn btn-primary">Add first purchase option</a></div>
+    @if (item.Status == PurchaseStatus.Purchased && item.ActualPurchasePrice.HasValue)
+    {
+        <div class="empty-state"><div class="empty-icon">✓</div><h2>Manual purchase recorded</h2><p>The total paid is recorded without requiring a product choice. You can still add one later if you want to keep the product details.</p><a asp-controller="ProductChoices" asp-action="Create" asp-route-itemId="@item.Id" class="btn btn-primary">Add optional purchase option</a></div>
+    }
+    else
+    {
+        <div class="empty-state"><div class="empty-icon">↗</div><h2>No purchase options yet</h2><p>Add the actual product, including its current price, retailer and product URL.</p><a asp-controller="ProductChoices" asp-action="Create" asp-route-itemId="@item.Id" class="btn btn-primary">Add first purchase option</a></div>
+    }
 }
 else
 {

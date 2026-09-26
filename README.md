@@ -12,6 +12,8 @@ A portfolio-style ASP.NET Core MVC application for managing household purchases 
 - Clear product URL, direct product image URL, retailer, price, tier and quantity fields
 - Optional product-image previews on purchase-option cards
 - Preferred and purchased product states
+- Optional manual purchase totals for items bought without a product choice
+- Transactional bulk entry for Temu purchases, including pasteable name, price and quantity rows
 - Collapsible long comparison responses
 - Existing spreadsheet data imported through an EF Core data migration
 - Responsive Bootstrap-based interface
@@ -50,15 +52,23 @@ Never edit an already-applied migration in a shared project. Add a new migration
 ## Workflow
 
 1. Select **Add item** and define what the household needs.
-2. Save. The app redirects to the item details page.
-3. Select **Add product choice**.
+2. If the item is already bought, enter the optional **Total purchase price**. This automatically sets it to **Purchased** and saves without requiring a product choice.
+3. Otherwise save and add a product choice.
 4. Enter the product name, tier, retailer, price and **Product URL**.
 5. Mark a choice preferred or purchased.
+
+For a Temu order containing several separate products, select **Bulk add Temu items**
+from the All Items page. Paste tab-, comma- or pipe-separated rows in the order
+`name, unit price, quantity`, review each category, and select **Add all items**.
+Each completed row creates one household item and one standard Temu product choice.
+No preferred choices are created. When **Mark all as purchased** is enabled, both
+the parent item and its product choice are recorded as purchased. The item's maximum
+budget is set to the option's unit price multiplied by its quantity.
 
 ## Project structure
 
 - `Controllers/DashboardController.cs`: aggregated dashboard queries
-- `Controllers/ItemsController.cs`: item list, filters, create and details
+- `Controllers/ItemsController.cs`: item list, filters, individual/bulk creation and details
 - `Controllers/ProductChoicesController.cs`: product-choice lifecycle and preferred/purchased rules
 - `Models/Entities`: persisted EF entities
 - `Models/ViewModels`: form and dashboard-specific models
@@ -171,6 +181,10 @@ The item-level **Preferred plan** total adds together every option marked
 `IsPreferred`, including each option's purchase quantity. When no preferred options
 have been selected, the dashboard continues to use the cheapest logged option as the
 budget fallback for that household item.
+
+Purchased items use the following value priority: the manual item-level purchase total,
+then the total of choices marked `IsPurchased`, then the preferred-plan total, and
+finally zero. Product-choice synchronisation does not overwrite or clear a manual total.
 
 The existing `SelectedProductChoiceId` column is retained for compatibility. It is set
 only when exactly one option is preferred. Multiple selected options are represented by

@@ -267,15 +267,16 @@ public class ProductChoicesController(
             ? preferredChoices[0].Id
             : null;
 
-        if (purchasedChoices.Count > 0)
+        // ActualPurchasePrice is an item-level manual override. Product-choice
+        // changes must not replace or clear it; calculated choice totals are read
+        // by HouseholdItemValueCalculator when no manual value exists.
+        if (item.ActualPurchasePrice.HasValue || purchasedChoices.Count > 0)
         {
             item.Status = PurchaseStatus.Purchased;
-            item.ActualPurchasePrice = purchasedChoices.Sum(x => x.Price * x.Quantity);
             item.PurchasedOn ??= DateTime.Today;
         }
         else
         {
-            item.ActualPurchasePrice = null;
             item.PurchasedOn = null;
             item.Status = preferredChoices.Count > 0
                 ? PurchaseStatus.Decided

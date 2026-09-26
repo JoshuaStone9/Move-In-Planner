@@ -9,7 +9,10 @@
         <h1>Move-in items</h1>
         <p>Items are grouped into category sections and ordered alphabetically, making the list easier to scan as it grows.</p>
     </div>
-    <a asp-action="Create" class="btn btn-primary">+ Add item</a>
+    <div class="hero-actions">
+        <a asp-action="BulkCreate" class="btn btn-light">Bulk add Temu items</a>
+        <a asp-action="Create" class="btn btn-primary">+ Add item</a>
+    </div>
 </section>
 
 <section class="items-summary-grid mb-4" aria-label="Item list summary">
@@ -26,7 +29,12 @@
     <article class="items-summary-card featured">
         <span>Current plan value</span>
         <strong>@Model.CurrentPlanValue.ToString("C")</strong>
-        <small>Preferred options, or cheapest fallback</small>
+        <small>Purchased totals, preferred options, or cheapest fallback</small>
+    </article>
+    <article class="items-summary-card featured">
+        <span>Remaining plan value</span>
+        <strong>@Model.RemainingPlanValue.ToString("C")</strong>
+        <small>Remaining Balance After Purchased Items</small>
     </article>
     <article class="items-summary-card">
         <span>Purchased value</span>
@@ -119,14 +127,18 @@ else
                                     <strong>@(item.TargetBudget?.ToString("C") ?? "—")</strong>
                                 </div>
                                 <div class="plan-value-cell">
-                                    <span>@(item.PreferredOptionCount > 0 ? "Preferred plan" : "Budget fallback")</span>
+                                    <span>@item.DisplayPlanLabel</span>
                                     <strong>@(item.DisplayPlanValue?.ToString("C") ?? "—")</strong>
                                 </div>
                             </div>
 
                             <div class="grouped-item-footer">
                                 <span>
-                                    @if (item.PreferredOptionCount > 0)
+                                    @if (item.Status == PurchaseStatus.Purchased && item.PurchaseOptionCount == 0)
+                                    {
+                                        @("Manual purchase total recorded")
+                                    }
+                                    else if (item.PreferredOptionCount > 0)
                                     {
                                         @($"{item.PreferredOptionCount} preferred option{(item.PreferredOptionCount == 1 ? "" : "s")}")
                                     }
