@@ -11,7 +11,7 @@ namespace MoveInPlanner.Controllers;
 
 public class ItemsController(ApplicationDbContext db) : Controller
 {
-    public async Task<IActionResult> Index(string? search, int? categoryId, PurchaseStatus? status)
+    public async Task<IActionResult> Index(string? search, int? categoryId, string? status, string? view)
     {
         var query = db.HouseholdItems
             .AsNoTracking()
@@ -28,8 +28,16 @@ public class ItemsController(ApplicationDbContext db) : Controller
         if (categoryId.HasValue)
             query = query.Where(item => item.CategoryId == categoryId);
 
-        if (status.HasValue)
-            query = query.Where(item => item.Status == status);
+        if (status == "NotPurchased")
+            query = query.Where(item => item.Status != PurchaseStatus.Purchased);
+        else if (Enum.TryParse<PurchaseStatus>(status, true, out var purchaseStatus)
+            && Enum.IsDefined(purchaseStatus))
+        {
+            query = query.Where(item => item.Status == purchaseStatus);
+            status = purchaseStatus.ToString();
+        }
+        else
+            status = null;
 
         var items = await query
             .OrderBy(item => item.Category.Name)
@@ -50,6 +58,7 @@ public class ItemsController(ApplicationDbContext db) : Controller
             Search = search,
             CategoryId = categoryId,
             Status = status,
+            View = view is "compact" or "table" ? view : "cards",
             TotalItems = items.Count,
 
             PurchasedItems = items.Count(item => item.Status == PurchaseStatus.Purchased),

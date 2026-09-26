@@ -7,7 +7,7 @@
     <div>
         <span class="eyebrow">YOUR COMPLETE LIST</span>
         <h1>Move-in items</h1>
-        <p>Items are grouped into category sections and ordered alphabetically, making the list easier to scan as it grows.</p>
+        <p>Choose a view to scan your items, compare costs, or see the full details.</p>
     </div>
     <div class="hero-actions">
         <a asp-action="BulkCreate" class="btn btn-light">Bulk add Temu items</a>
@@ -44,6 +44,7 @@
 </section>
 
 <form method="get" class="filter-bar items-filter-bar mb-4">
+    <input type="hidden" name="view" value="@Model.View" />
     <div class="search-field">
         <span aria-hidden="true">⌕</span>
         <input name="search" value="@Model.Search" placeholder="Search items…" aria-label="Search items" />
@@ -53,14 +54,26 @@
     </select>
     <select name="status" aria-label="Status">
         <option value="">All statuses</option>
+        <option value="NotPurchased" selected="@(Model.Status == "NotPurchased")">Not purchased</option>
         @foreach (var purchaseStatus in Enum.GetValues<PurchaseStatus>())
         {
-            <option value="@purchaseStatus" selected="@(Model.Status == purchaseStatus)">@purchaseStatus</option>
+            <option value="@purchaseStatus" selected="@(Model.Status == purchaseStatus.ToString())">@purchaseStatus</option>
         }
     </select>
     <button class="btn btn-dark">Filter</button>
-    <a asp-action="Index" class="btn btn-light">Clear</a>
+    <a asp-action="Index" asp-route-view="@Model.View" class="btn btn-light">Clear</a>
 </form>
+
+<nav class="items-view-switcher" aria-label="Item views">
+    <span>View</span>
+    @foreach (var option in new[] { (Key: "cards", Label: "Cards"), (Key: "compact", Label: "Compact list"), (Key: "table", Label: "Table") })
+    {
+        <a asp-action="Index" asp-route-view="@option.Key" asp-route-search="@Model.Search"
+           asp-route-categoryId="@Model.CategoryId" asp-route-status="@Model.Status"
+           class="items-view-option @(Model.View == option.Key ? "is-active" : null)"
+           aria-current="@(Model.View == option.Key ? "page" : null)">@option.Label</a>
+    }
+</nav>
 
 @if (Model.Categories.Count == 0)
 {
@@ -68,6 +81,14 @@
         <h2>No items found</h2>
         <p>Try clearing the filters or add your first item.</p>
     </div>
+}
+else if (Model.View == "compact")
+{
+    <partial name="_CompactList" model="Model" />
+}
+else if (Model.View == "table")
+{
+    <partial name="_ItemsTable" model="Model" />
 }
 else
 {

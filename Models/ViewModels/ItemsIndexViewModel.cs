@@ -10,7 +10,8 @@ public sealed class ItemsIndexViewModel
 {
     public string? Search { get; init; }
     public int? CategoryId { get; init; }
-    public PurchaseStatus? Status { get; init; }
+    public string? Status { get; init; }
+    public string View { get; init; } = "cards";
 
     public int TotalItems { get; init; }
     public int PurchasedItems { get; init; }
